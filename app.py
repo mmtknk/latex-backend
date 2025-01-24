@@ -1,20 +1,26 @@
 import os
 import subprocess
-from flask import Flask, request, send_file, send_from_directory, jsonify
+from flask import Flask, request, send_from_directory, render_template, jsonify
 from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)  # Enable cross-origin requests if needed
+app = Flask(__name__, template_folder="templates")  # Use the 'templates' folder for HTML files
+CORS(app)
 
 # Directory to store compiled PDFs
 OUTPUT_DIR = "compiled_pdfs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+@app.route("/")
+def home():
+    # Get a list of all PDF files in the OUTPUT_DIR
+    pdf_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".pdf")]
+    return render_template("index.html", pdf_files=pdf_files)
+
 @app.route("/compile", methods=["POST"])
 def compile_latex():
-    data = request.json
-    latex_code = data.get("latex_code")
-    file_name = data.get("file_name", "output")  # Default to "output" if not provided
+    # Handle LaTeX code from a form or API request
+    latex_code = request.form.get("latex_code")
+    file_name = request.form.get("file_name", "output")  # Default to "output" if not provided
 
     if not latex_code:
         return jsonify({"error": "No LaTeX code provided"}), 400
@@ -32,26 +38,14 @@ def compile_latex():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        pdf_file = os.path.join(OUTPUT_DIR, f"{file_name}.pdf")
-        if os.path.exists(pdf_file):
-            return send_file(pdf_file, as_attachment=True)
-        else:
-            return jsonify({"error": "PDF not generated"}), 500
+        return jsonify({"message": f"PDF generated: {file_name}.pdf"}), 200
     except subprocess.CalledProcessError as e:
         return jsonify({"error": "LaTeX compilation failed", "details": e.stderr.decode()}), 500
 
-# Serve compiled PDFs directly via HTTP
-@app.route("/pdfs/<path:filename>", methods=["GET"])
+@app.route("/pdfs/<path:filename>")
 def serve_pdf(filename):
-    try:
-        return send_from_directory(OUTPUT_DIR, filename)
-    except FileNotFoundError:
-        return jsonify({"error": f"File '{filename}' not found"}), 404
-
-@app.route("/", methods=["GET"])
-def home():
-    return "Flask app for LaTeX compilation is running! Access /compile for LaTeX or /pdfs/<filename> for PDFs."
+    # Serve a single PDF file from the OUTPUT_DIR
+    return send_from_directory(OUTPUT_DIR, filename)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)  # Expose the app on all interfaces
-
+    app.run(host="0.0.0.0", port=5000)
